@@ -1,0 +1,8 @@
+nycu-hw2-data/
+__pycache__/
+*.pyc
+wandb/
+*.pt
+*.json
+nycu-hw2-data.tar.gz
+.codex
