@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime
 from pathlib import Path
 
 import torch
@@ -20,12 +21,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--valid-annotation-file", type=Path, default=None)
     parser.add_argument("--model-name", type=str, default="facebook/detr-resnet-50")
     parser.add_argument("--epochs", type=int, default=10)
+    parser.add_argument("--scheduler", type=str, default="cosine", choices=["cosine", "none"])
     parser.add_argument("--batch-size", type=int, default=4)
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument("--lr-backbone", type=float, default=1e-5)
     parser.add_argument("--weight-decay", type=float, default=1e-4)
     parser.add_argument("--max-grad-norm", type=float, default=0.1)
     parser.add_argument("--num-workers", type=int, default=4)
+    parser.add_argument("--augment", action="store_true", help="Enable basic color jitter augmentation for training.")
     parser.add_argument("--output-dir", type=Path, default=Path("checkpoints/detr"))
     parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--wandb-project", type=str, default="dlcv-hw2-detr")
@@ -34,25 +37,27 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def init_wandb(args: argparse.Namespace, paths: dict[str, Path]):
+def init_wandb(args: argparse.Namespace, paths: dict[str, Path], output_dir: Path):
     if args.wandb_mode == "disabled":
         return None
 
     config = {
         "model_name": args.model_name,
         "epochs": args.epochs,
+        "scheduler": args.scheduler,
         "batch_size": args.batch_size,
         "lr": args.lr,
         "lr_backbone": args.lr_backbone,
         "weight_decay": args.weight_decay,
         "max_grad_norm": args.max_grad_norm,
         "num_workers": args.num_workers,
+        "augment": args.augment,
         "device": args.device,
         "train_image_dir": str(paths["train_image_dir"]),
         "train_annotation_file": str(paths["train_annotation_file"]),
         "valid_image_dir": str(paths["valid_image_dir"]),
         "valid_annotation_file": str(paths["valid_annotation_file"]),
-        "output_dir": str(args.output_dir),
+        "output_dir": str(output_dir),
     }
 
     return wandb.init(
@@ -121,8 +126,9 @@ def resolve_paths(args: argparse.Namespace) -> dict[str, Path]:
 
 def train(args: argparse.Namespace) -> None:
     paths = resolve_paths(args)
-    args.output_dir.mkdir(parents=True, exist_ok=True)
-    wandb_run = init_wandb(args, paths)
+    run_dir = args.output_dir / datetime.now().strftime("%Y%m%d_%H%M%S")
+    run_dir.mkdir(parents=True, exist_ok=True)
+    wandb_run = init_wandb(args, paths, run_dir)
 
     processor = create_processor(args.model_name)
     model = create_model(paths["train_annotation_file"], args.model_name)
@@ -135,6 +141,7 @@ def train(args: argparse.Namespace) -> None:
         processor=processor,
         batch_size=args.batch_size,
         num_workers=args.num_workers,
+        augment=args.augment,
     )
 
     device = torch.device(args.device)
@@ -156,6 +163,9 @@ def train(args: argparse.Namespace) -> None:
         ],
         weight_decay=args.weight_decay,
     )
+    scheduler = None
+    if args.scheduler == "cosine":
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs)
 
     best_valid_loss = float("inf")
     best_map_50_95 = float("-inf")
@@ -178,6 +188,8 @@ def train(args: argparse.Namespace) -> None:
             epoch=epoch,
             total_epochs=args.epochs,
         )
+        if scheduler is not None:
+            scheduler.step()
 
         print(
             f"epoch {epoch}/{args.epochs} "
@@ -197,6 +209,8 @@ def train(args: argparse.Namespace) -> None:
                     "valid/map_50_95": valid_metrics["map_50_95"],
                     "best/valid_loss": min(best_valid_loss, valid_loss),
                     "best/map_50_95": max(best_map_50_95, valid_metrics["map_50_95"]),
+                    "lr": optimizer.param_groups[0]["lr"],
+                    "lr_backbone": optimizer.param_groups[1]["lr"],
                 }
             )
 
@@ -211,18 +225,18 @@ def train(args: argparse.Namespace) -> None:
             "model_name": args.model_name,
         }
 
-        torch.save(checkpoint, args.output_dir / "last.pt")
+        torch.save(checkpoint, run_dir / "last.pt")
 
         if valid_loss < best_valid_loss:
             best_valid_loss = valid_loss
-            torch.save(checkpoint, args.output_dir / "best_loss.pt")
+            torch.save(checkpoint, run_dir / "best_loss.pt")
 
         if valid_metrics["map_50_95"] > best_map_50_95:
             best_map_50_95 = valid_metrics["map_50_95"]
-            torch.save(checkpoint, args.output_dir / "best_map.pt")
+            torch.save(checkpoint, run_dir / "best_map.pt")
 
-    model.save_pretrained(args.output_dir / "hf_model")
-    processor.save_pretrained(args.output_dir / "hf_model")
+    model.save_pretrained(run_dir / "hf_model")
+    processor.save_pretrained(run_dir / "hf_model")
 
     if wandb_run is not None:
         wandb_run.finish()

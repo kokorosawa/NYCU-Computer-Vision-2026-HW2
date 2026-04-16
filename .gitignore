@@ -6,3 +6,4 @@ wandb/
 *.json
 nycu-hw2-data.tar.gz
 .codex
+*.safetensors

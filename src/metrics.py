@@ -128,6 +128,7 @@ def run_validation(
     dataloader: torch.utils.data.DataLoader,
     processor: Any,
     device: torch.device,
+    threshold: float = 0.0,
     epoch: int | None = None,
     total_epochs: int | None = None,
 ) -> tuple[float, dict[str, float]]:
@@ -150,7 +151,7 @@ def run_validation(
             target_sizes = torch.stack([label["orig_size"] for label in labels])
             processed_results = processor.post_process_object_detection(
                 outputs=outputs,
-                threshold=0.0,
+                threshold=threshold,
                 target_sizes=target_sizes,
             )
 

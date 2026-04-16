@@ -8,6 +8,7 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from torchvision.datasets import CocoDetection
+from torchvision.transforms import v2 as T
 from transformers import DetrImageProcessor
 
 
@@ -31,15 +32,21 @@ class DetrCocoDataset(CocoDetection):
         image_dir: str | Path,
         annotation_file: str | Path,
         processor: DetrImageProcessor,
+        augment: bool = False,
     ) -> None:
         super().__init__(root=str(image_dir), annFile=str(annotation_file))
         self.processor = processor
+        self.augment = augment
+        self.color_jitter = T.ColorJitter(brightness=0.3, contrast=0.3, saturation=0.3, hue=0.03)
 
     def __getitem__(self, index: int) -> tuple[Any, dict[str, Any]]:
         image, annotations = super().__getitem__(index)
         image_id = self.ids[index]
-        target = {"image_id": image_id, "annotations": annotations}
 
+        if self.augment:
+            image = self.color_jitter(image)
+
+        target = {"image_id": image_id, "annotations": annotations}
         encoding = self.processor(images=image, annotations=target, return_tensors="pt")
         pixel_values = encoding["pixel_values"].squeeze(0)
         labels = encoding["labels"][0]
@@ -84,10 +91,11 @@ def create_dataloaders(
     processor: DetrImageProcessor,
     batch_size: int,
     num_workers: int,
+    augment: bool,
 ) -> tuple[DataLoader, DataLoader]:
     collate_fn = build_collate_fn(processor)
 
-    train_dataset = DetrCocoDataset(train_image_dir, train_annotation_file, processor)
+    train_dataset = DetrCocoDataset(train_image_dir, train_annotation_file, processor, augment=augment)
     valid_dataset = DetrCocoDataset(valid_image_dir, valid_annotation_file, processor)
 
     train_loader = DataLoader(
