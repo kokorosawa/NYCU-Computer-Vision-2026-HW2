@@ -4,6 +4,7 @@ import argparse
 from pathlib import Path
 
 import torch
+from pycocotools.cocoeval import COCOeval
 from transformers import DetrForObjectDetection, DetrImageProcessor
 
 from src.dataset import create_dataloaders
@@ -27,6 +28,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--num-workers", type=int, default=4)
     parser.add_argument("--threshold", type=float, default=0.0)
+    parser.add_argument("--metric-backend", type=str, default="pycocotools", choices=["pycocotools", "custom"])
     parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
     return parser.parse_args()
 
@@ -55,6 +57,59 @@ def load_model_and_processor(
     return processor, model
 
 
+def run_validation_pycoco(
+    model: torch.nn.Module,
+    dataloader: torch.utils.data.DataLoader,
+    processor: DetrImageProcessor,
+    device: torch.device,
+    threshold: float,
+) -> dict[str, float]:
+    coco_gt = dataloader.dataset.coco
+    detections: list[dict[str, float | int | list[float]]] = []
+
+    model.eval()
+    with torch.no_grad():
+        for batch in dataloader:
+            pixel_values = batch["pixel_values"].to(device)
+            pixel_mask = batch["pixel_mask"].to(device)
+            labels = [{k: v.to(device) for k, v in t.items()} for t in batch["labels"]]
+
+            outputs = model(pixel_values=pixel_values, pixel_mask=pixel_mask)
+            target_sizes = torch.stack([label["orig_size"] for label in labels])
+            results = processor.post_process_object_detection(
+                outputs=outputs,
+                threshold=threshold,
+                target_sizes=target_sizes,
+            )
+
+            for label, result in zip(labels, results):
+                image_id = int(label["image_id"].item())
+                for score, class_id, box in zip(result["scores"], result["labels"], result["boxes"]):
+                    x_min, y_min, x_max, y_max = [float(value.item()) for value in box]
+                    detections.append(
+                        {
+                            "image_id": image_id,
+                            "category_id": int(class_id.item()) + 1,
+                            "bbox": [x_min, y_min, x_max - x_min, y_max - y_min],
+                            "score": float(score.item()),
+                        }
+                    )
+
+    if not detections:
+        return {"map_50": 0.0, "map_50_95": 0.0}
+
+    coco_dt = coco_gt.loadRes(detections)
+    coco_eval = COCOeval(coco_gt, coco_dt, iouType="bbox")
+    coco_eval.evaluate()
+    coco_eval.accumulate()
+    coco_eval.summarize()
+
+    return {
+        "map_50_95": float(coco_eval.stats[0]),
+        "map_50": float(coco_eval.stats[1]),
+    }
+
+
 def main() -> None:
     args = parse_args()
     device = torch.device(args.device)
@@ -78,10 +133,26 @@ def main() -> None:
         batch_size=args.batch_size,
         num_workers=args.num_workers,
         augment=False,
+        aug_color=False,
+        aug_geom=False,
+        color_prob=0.0,
+        geom_prob=0.0,
+        color_brightness=0.0,
+        color_contrast=0.0,
+        color_saturation=0.0,
+        color_hue=0.0,
+        geom_degrees=0.0,
+        geom_translate=0.0,
+        geom_scale_min=1.0,
+        geom_scale_max=1.0,
     )
 
-    valid_loss, metrics = run_validation(model, valid_loader, processor, device, threshold=args.threshold)
-    print(f"valid_loss={valid_loss:.4f} mAP@0.5={metrics['map_50']:.4f} mAP@0.5:0.95={metrics['map_50_95']:.4f}")
+    if args.metric_backend == "pycocotools":
+        metrics = run_validation_pycoco(model, valid_loader, processor, device, threshold=args.threshold)
+        print(f"[pycocotools] mAP@0.5={metrics['map_50']:.4f} mAP@0.5:0.95={metrics['map_50_95']:.4f}")
+    else:
+        valid_loss, metrics = run_validation(model, valid_loader, processor, device, threshold=args.threshold)
+        print(f"[custom] valid_loss={valid_loss:.4f} mAP@0.5={metrics['map_50']:.4f} mAP@0.5:0.95={metrics['map_50_95']:.4f}")
 
 
 if __name__ == "__main__":
