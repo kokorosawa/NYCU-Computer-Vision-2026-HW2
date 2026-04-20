@@ -7,7 +7,7 @@ from pathlib import Path
 import torch
 from PIL import Image
 from tqdm.auto import tqdm
-from transformers import DetrForObjectDetection, DetrImageProcessor
+from transformers import DeformableDetrForObjectDetection, DeformableDetrImageProcessor
 
 from src.dataset import build_category_id_mappings
 from src.model import create_model, create_processor
@@ -16,7 +16,7 @@ IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run DETR inference on one image or a directory.")
+    parser = argparse.ArgumentParser(description="Run Deformable DETR inference on one image or a directory.")
     parser.add_argument("--model-dir", type=Path, default=Path("checkpoints/detr/hf_model"))
     parser.add_argument("--checkpoint", type=Path, default=None, help="Path to a .pt checkpoint (optional).")
     parser.add_argument(
@@ -48,10 +48,10 @@ def load_model_and_processor(
     checkpoint: Path | None,
     label_annotation_file: Path,
     device: torch.device,
-) -> tuple[DetrImageProcessor, DetrForObjectDetection]:
+) -> tuple[DeformableDetrImageProcessor, DeformableDetrForObjectDetection]:
     if model_dir.is_dir():
-        processor = DetrImageProcessor.from_pretrained(model_dir)
-        model = DetrForObjectDetection.from_pretrained(model_dir)
+        processor = DeformableDetrImageProcessor.from_pretrained(model_dir)
+        model = DeformableDetrForObjectDetection.from_pretrained(model_dir)
     else:
         if checkpoint is None:
             raise FileNotFoundError(
@@ -80,8 +80,8 @@ def infer_image_id_from_filename(image_path: Path) -> int | None:
 
 def predict_batch(
     image_paths: list[Path],
-    processor: DetrImageProcessor,
-    model: DetrForObjectDetection,
+    processor: DeformableDetrImageProcessor,
+    model: DeformableDetrForObjectDetection,
     device: torch.device,
     threshold: float,
     image_ids: list[int | None],

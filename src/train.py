@@ -13,13 +13,13 @@ from src.model import create_model, create_processor
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Train DETR on the homework dataset.")
+    parser = argparse.ArgumentParser(description="Train Deformable DETR on the homework dataset.")
     parser.add_argument("--data-root", type=Path, default=Path("nycu-hw2-data"))
     parser.add_argument("--train-image-dir", type=Path, default=None)
     parser.add_argument("--train-annotation-file", type=Path, default=None)
     parser.add_argument("--valid-image-dir", type=Path, default=None)
     parser.add_argument("--valid-annotation-file", type=Path, default=None)
-    parser.add_argument("--model-name", type=str, default="facebook/detr-resnet-50")
+    parser.add_argument("--model-name", type=str, default="SenseTime/deformable-detr")
     parser.add_argument("--epochs", type=int, default=10)
     parser.add_argument("--scheduler", type=str, default="warmup_cosine", choices=["warmup_cosine", "cosine", "none"])
     parser.add_argument("--warmup-epochs", type=int, default=2)
@@ -47,7 +47,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-dir", type=Path, default=Path("checkpoints/detr"))
     parser.add_argument("--resume", type=Path, default=None, help="Path to a checkpoint .pt file to resume training.")
     parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
-    parser.add_argument("--wandb-project", type=str, default="dlcv-hw2-detr")
+    parser.add_argument("--wandb-project", type=str, default="dlcv-hw2-detr-tranformer-from-sketch")
     parser.add_argument("--wandb-name", type=str, default=None)
     parser.add_argument("--wandb-mode", type=str, default="online", choices=["online", "offline", "disabled"])
     return parser.parse_args()
@@ -252,11 +252,7 @@ def train(args: argparse.Namespace) -> None:
         if "optimizer_state_dict" in checkpoint:
             optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
 
-        if (
-            scheduler is not None
-            and "scheduler_state_dict" in checkpoint
-            and checkpoint["scheduler_state_dict"] is not None
-        ):
+        if scheduler is not None and "scheduler_state_dict" in checkpoint and checkpoint["scheduler_state_dict"] is not None:
             scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
 
         start_epoch = int(checkpoint.get("epoch", 0)) + 1
@@ -264,8 +260,7 @@ def train(args: argparse.Namespace) -> None:
         best_map_50_95 = float(checkpoint.get("best_map_50_95", checkpoint.get("valid_map_50_95", float("-inf"))))
 
         print(
-            f"Resumed from {args.resume} "
-            f"(start_epoch={start_epoch}, best_valid_loss={best_valid_loss:.4f}, best_map_50_95={best_map_50_95:.4f})"
+            f"Resumed from {args.resume} " f"(start_epoch={start_epoch}, best_valid_loss={best_valid_loss:.4f}, best_map_50_95={best_map_50_95:.4f})"
         )
 
     for epoch in range(start_epoch, args.epochs + 1):

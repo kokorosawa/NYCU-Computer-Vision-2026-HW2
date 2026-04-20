@@ -5,7 +5,7 @@ from pathlib import Path
 
 import torch
 from pycocotools.cocoeval import COCOeval
-from transformers import DetrForObjectDetection, DetrImageProcessor
+from transformers import DeformableDetrForObjectDetection, DeformableDetrImageProcessor
 
 from src.dataset import build_category_id_mappings, create_dataloaders
 from src.metrics import run_validation
@@ -13,7 +13,7 @@ from src.model import create_model, create_processor
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Evaluate DETR on validation set.")
+    parser = argparse.ArgumentParser(description="Evaluate Deformable DETR on validation set.")
     parser.add_argument("--data-root", type=Path, default=Path("nycu-hw2-data"))
     parser.add_argument("--valid-image-dir", type=Path, default=None)
     parser.add_argument("--valid-annotation-file", type=Path, default=None)
@@ -38,10 +38,10 @@ def load_model_and_processor(
     checkpoint: Path | None,
     label_annotation_file: Path,
     device: torch.device,
-) -> tuple[DetrImageProcessor, DetrForObjectDetection]:
+) -> tuple[DeformableDetrImageProcessor, DeformableDetrForObjectDetection]:
     if model_dir.is_dir():
-        processor = DetrImageProcessor.from_pretrained(model_dir)
-        model = DetrForObjectDetection.from_pretrained(model_dir)
+        processor = DeformableDetrImageProcessor.from_pretrained(model_dir)
+        model = DeformableDetrForObjectDetection.from_pretrained(model_dir)
     else:
         if checkpoint is None:
             raise FileNotFoundError(
@@ -60,7 +60,7 @@ def load_model_and_processor(
 def run_validation_pycoco(
     model: torch.nn.Module,
     dataloader: torch.utils.data.DataLoader,
-    processor: DetrImageProcessor,
+    processor: DeformableDetrImageProcessor,
     device: torch.device,
     threshold: float,
     contiguous_to_raw: dict[int, int],

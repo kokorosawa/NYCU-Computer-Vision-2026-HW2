@@ -10,7 +10,7 @@ from torch.utils.data import DataLoader
 from torchvision.datasets import CocoDetection
 from torchvision.transforms import v2 as T
 from torchvision.tv_tensors import BoundingBoxes
-from transformers import DetrImageProcessor
+from transformers import DeformableDetrImageProcessor
 
 
 def load_categories(annotation_file: str | Path) -> list[dict[str, Any]]:
@@ -39,7 +39,7 @@ class DetrCocoDataset(CocoDetection):
         self,
         image_dir: str | Path,
         annotation_file: str | Path,
-        processor: DetrImageProcessor,
+        processor: DeformableDetrImageProcessor,
         augment: bool = False,
         aug_color: bool = True,
         aug_geom: bool = False,
@@ -141,7 +141,7 @@ class DetrCocoDataset(CocoDetection):
         return pixel_values, labels
 
 
-def build_collate_fn(processor: DetrImageProcessor):
+def build_collate_fn(processor: DeformableDetrImageProcessor):
     def collate_fn(batch: list[tuple[Any, dict[str, Any]]]) -> dict[str, Any]:
         pixel_values = [item[0] for item in batch]
         labels = [item[1] for item in batch]
@@ -172,7 +172,7 @@ def create_dataloaders(
     train_annotation_file: str | Path,
     valid_image_dir: str | Path,
     valid_annotation_file: str | Path,
-    processor: DetrImageProcessor,
+    processor: DeformableDetrImageProcessor,
     batch_size: int,
     num_workers: int,
     augment: bool,
