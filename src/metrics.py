@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 import torch
+from pycocotools.cocoeval import COCOeval
 from tqdm.auto import tqdm
 from torchvision.ops import box_iou
 
@@ -35,11 +36,16 @@ def calculate_ap(recalls: list[float], precisions: list[float]) -> float:
 def build_ground_truth_index(dataset) -> tuple[dict[int, dict[int, list[list[float]]]], dict[int, int]]:
     ground_truths: dict[int, dict[int, list[list[float]]]] = {}
     gt_counts: dict[int, int] = {}
+    raw_to_contiguous = getattr(dataset, "raw_to_contiguous", None)
 
     for image_id in dataset.ids:
         annotations = dataset.coco.imgToAnns[image_id]
         for annotation in annotations:
-            class_id = annotation["category_id"] - 1
+            raw_category_id = int(annotation["category_id"])
+            if raw_to_contiguous is not None:
+                class_id = raw_to_contiguous[raw_category_id]
+            else:
+                class_id = raw_category_id - 1
             x, y, width, height = annotation["bbox"]
             box = [x, y, x + width, y + height]
 
@@ -123,18 +129,41 @@ def evaluate_map(
     }
 
 
+def evaluate_map_pycocotools(
+    predictions: list[dict[str, float | int | list[float]]],
+    dataset,
+) -> dict[str, float]:
+    if not predictions:
+        return {"map_50": 0.0, "map_50_95": 0.0}
+
+    coco_gt = dataset.coco
+    coco_dt = coco_gt.loadRes(predictions)
+    coco_eval = COCOeval(coco_gt, coco_dt, iouType="bbox")
+    coco_eval.evaluate()
+    coco_eval.accumulate()
+    coco_eval.summarize()
+
+    return {
+        "map_50_95": float(coco_eval.stats[0]),
+        "map_50": float(coco_eval.stats[1]),
+    }
+
+
 def run_validation(
     model: torch.nn.Module,
     dataloader: torch.utils.data.DataLoader,
     processor: Any,
     device: torch.device,
     threshold: float = 0.0,
+    metric_backend: str = "pycocotools",
     epoch: int | None = None,
     total_epochs: int | None = None,
 ) -> tuple[float, dict[str, float]]:
     model.eval()
     total_loss = 0.0
-    predictions: list[dict[str, float | int | list[float]]] = []
+    predictions_custom: list[dict[str, float | int | list[float]]] = []
+    predictions_pycoco: list[dict[str, float | int | list[float]]] = []
+    contiguous_to_raw = getattr(dataloader.dataset, "contiguous_to_raw", None)
     epoch_prefix = f"Epoch {epoch}/{total_epochs}" if epoch is not None and total_epochs is not None else "Epoch"
     progress = tqdm(dataloader, desc=f"{epoch_prefix} [valid]", leave=False)
 
@@ -159,15 +188,35 @@ def run_validation(
                 image_id = int(label["image_id"].item())
 
                 for score, class_id, box in zip(result["scores"], result["labels"], result["boxes"]):
-                    predictions.append(
-                        {
-                            "image_id": image_id,
-                            "label_id": int(class_id.item()),
-                            "score": float(score.item()),
-                            "bbox_xyxy": [float(value.item()) for value in box],
-                        }
-                    )
+                    contiguous_class_id = int(class_id.item())
+                    box_xyxy = [float(value.item()) for value in box]
+                    if metric_backend == "pycocotools":
+                        x_min, y_min, x_max, y_max = box_xyxy
+                        if contiguous_to_raw is not None:
+                            raw_category_id = contiguous_to_raw[contiguous_class_id]
+                        else:
+                            raw_category_id = contiguous_class_id + 1
+                        predictions_pycoco.append(
+                            {
+                                "image_id": image_id,
+                                "category_id": raw_category_id,
+                                "score": float(score.item()),
+                                "bbox": [x_min, y_min, x_max - x_min, y_max - y_min],
+                            }
+                        )
+                    else:
+                        predictions_custom.append(
+                            {
+                                "image_id": image_id,
+                                "label_id": contiguous_class_id,
+                                "score": float(score.item()),
+                                "bbox_xyxy": box_xyxy,
+                            }
+                        )
 
     valid_loss = total_loss / max(len(dataloader), 1)
-    metrics = evaluate_map(predictions, dataloader.dataset)
+    if metric_backend == "pycocotools":
+        metrics = evaluate_map_pycocotools(predictions_pycoco, dataloader.dataset)
+    else:
+        metrics = evaluate_map(predictions_custom, dataloader.dataset)
     return valid_loss, metrics

@@ -9,6 +9,7 @@ from PIL import Image
 from tqdm.auto import tqdm
 from transformers import DetrForObjectDetection, DetrImageProcessor
 
+from src.dataset import build_category_id_mappings
 from src.model import create_model, create_processor
 
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
@@ -84,6 +85,7 @@ def predict_batch(
     device: torch.device,
     threshold: float,
     image_ids: list[int | None],
+    contiguous_to_raw: dict[int, int],
 ) -> list[dict[str, object]]:
     images = [Image.open(path).convert("RGB") for path in image_paths]
     inputs = processor(images=images, return_tensors="pt")
@@ -102,7 +104,7 @@ def predict_batch(
     predictions: list[dict[str, object]] = []
     for image_id, result in zip(image_ids, results):
         for score, label, box in zip(result["scores"], result["labels"], result["boxes"]):
-            class_id = int(label.item()) + 1
+            class_id = contiguous_to_raw[int(label.item())]
             x_min, y_min, x_max, y_max = [float(value.item()) for value in box]
 
             predictions.append(
@@ -127,6 +129,7 @@ def main() -> None:
         args.label_annotation_file,
         device,
     )
+    _, contiguous_to_raw = build_category_id_mappings(args.label_annotation_file)
     image_paths = list_images(args.input)
     image_id_mapping = load_image_id_mapping(args.annotation_file) if args.annotation_file is not None else None
 
@@ -149,6 +152,7 @@ def main() -> None:
                 device=device,
                 threshold=args.threshold,
                 image_ids=batch_ids,
+                contiguous_to_raw=contiguous_to_raw,
             )
         )
 

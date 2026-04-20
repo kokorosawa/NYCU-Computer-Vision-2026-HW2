@@ -7,7 +7,7 @@ import torch
 from pycocotools.cocoeval import COCOeval
 from transformers import DetrForObjectDetection, DetrImageProcessor
 
-from src.dataset import create_dataloaders
+from src.dataset import build_category_id_mappings, create_dataloaders
 from src.metrics import run_validation
 from src.model import create_model, create_processor
 
@@ -63,6 +63,7 @@ def run_validation_pycoco(
     processor: DetrImageProcessor,
     device: torch.device,
     threshold: float,
+    contiguous_to_raw: dict[int, int],
 ) -> dict[str, float]:
     coco_gt = dataloader.dataset.coco
     detections: list[dict[str, float | int | list[float]]] = []
@@ -86,10 +87,11 @@ def run_validation_pycoco(
                 image_id = int(label["image_id"].item())
                 for score, class_id, box in zip(result["scores"], result["labels"], result["boxes"]):
                     x_min, y_min, x_max, y_max = [float(value.item()) for value in box]
+                    contiguous_class_id = int(class_id.item())
                     detections.append(
                         {
                             "image_id": image_id,
-                            "category_id": int(class_id.item()) + 1,
+                            "category_id": contiguous_to_raw[contiguous_class_id],
                             "bbox": [x_min, y_min, x_max - x_min, y_max - y_min],
                             "score": float(score.item()),
                         }
@@ -146,9 +148,17 @@ def main() -> None:
         geom_scale_min=1.0,
         geom_scale_max=1.0,
     )
+    _, contiguous_to_raw = build_category_id_mappings(valid_annotation_file)
 
     if args.metric_backend == "pycocotools":
-        metrics = run_validation_pycoco(model, valid_loader, processor, device, threshold=args.threshold)
+        metrics = run_validation_pycoco(
+            model,
+            valid_loader,
+            processor,
+            device,
+            threshold=args.threshold,
+            contiguous_to_raw=contiguous_to_raw,
+        )
         print(f"[pycocotools] mAP@0.5={metrics['map_50']:.4f} mAP@0.5:0.95={metrics['map_50_95']:.4f}")
     else:
         valid_loss, metrics = run_validation(model, valid_loader, processor, device, threshold=args.threshold)

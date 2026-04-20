@@ -25,6 +25,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--warmup-epochs", type=int, default=2)
     parser.add_argument("--warmup-start-factor", type=float, default=0.1)
     parser.add_argument("--batch-size", type=int, default=4)
+    parser.add_argument("--metric-backend", type=str, default="pycocotools", choices=["pycocotools", "custom"])
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument("--lr-backbone", type=float, default=1e-5)
     parser.add_argument("--weight-decay", type=float, default=1e-4)
@@ -63,6 +64,7 @@ def init_wandb(args: argparse.Namespace, paths: dict[str, Path], output_dir: Pat
         "warmup_epochs": args.warmup_epochs,
         "warmup_start_factor": args.warmup_start_factor,
         "batch_size": args.batch_size,
+        "metric_backend": args.metric_backend,
         "lr": args.lr,
         "lr_backbone": args.lr_backbone,
         "weight_decay": args.weight_decay,
@@ -281,6 +283,7 @@ def train(args: argparse.Namespace) -> None:
             valid_loader,
             processor,
             device,
+            metric_backend=args.metric_backend,
             epoch=epoch,
             total_epochs=args.epochs,
         )

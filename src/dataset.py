@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Any
 
 import torch
-import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from torchvision.datasets import CocoDetection
 from torchvision.transforms import v2 as T
@@ -26,6 +25,13 @@ def build_label_mappings(annotation_file: str | Path) -> tuple[dict[int, str], d
     id2label = {index: category["name"] for index, category in enumerate(categories)}
     label2id = {label: index for index, label in id2label.items()}
     return id2label, label2id
+
+
+def build_category_id_mappings(annotation_file: str | Path) -> tuple[dict[int, int], dict[int, int]]:
+    categories = load_categories(annotation_file)
+    raw_to_contiguous = {int(category["id"]): index for index, category in enumerate(categories)}
+    contiguous_to_raw = {index: int(category["id"]) for index, category in enumerate(categories)}
+    return raw_to_contiguous, contiguous_to_raw
 
 
 class DetrCocoDataset(CocoDetection):
@@ -50,6 +56,7 @@ class DetrCocoDataset(CocoDetection):
     ) -> None:
         super().__init__(root=str(image_dir), annFile=str(annotation_file))
         self.processor = processor
+        self.raw_to_contiguous, self.contiguous_to_raw = build_category_id_mappings(annotation_file)
         self.augment = augment
         self.aug_color = aug_color
         self.aug_geom = aug_geom
@@ -127,8 +134,10 @@ class DetrCocoDataset(CocoDetection):
         pixel_values = encoding["pixel_values"].squeeze(0)
         labels = encoding["labels"][0]
 
-        # The annotation file uses category ids 1..10, but DETR expects 0-based labels.
-        labels["class_labels"] = labels["class_labels"] - 1
+        labels["class_labels"] = torch.tensor(
+            [self.raw_to_contiguous[int(category_id)] for category_id in labels["class_labels"].tolist()],
+            dtype=labels["class_labels"].dtype,
+        )
         return pixel_values, labels
 
 
@@ -136,19 +145,18 @@ def build_collate_fn(processor: DetrImageProcessor):
     def collate_fn(batch: list[tuple[Any, dict[str, Any]]]) -> dict[str, Any]:
         pixel_values = [item[0] for item in batch]
         labels = [item[1] for item in batch]
-        max_height = max(image.shape[1] for image in pixel_values)
-        max_width = max(image.shape[2] for image in pixel_values)
+        max_height = max(image.shape[-2] for image in pixel_values)
+        max_width = max(image.shape[-1] for image in pixel_values)
 
-        padded_images = []
-        pixel_masks = []
-
+        padded_images: list[torch.Tensor] = []
+        pixel_masks: list[torch.Tensor] = []
         for image in pixel_values:
-            _, height, width = image.shape
-            padded_images.append(F.pad(image, (0, max_width - width, 0, max_height - height)))
-
-            pixel_mask = torch.zeros((max_height, max_width), dtype=torch.bool)
-            pixel_mask[:height, :width] = True
-            pixel_masks.append(pixel_mask)
+            padded_image, pixel_mask, _ = processor.pad(
+                image=image,
+                padded_size=(max_height, max_width),
+            )
+            padded_images.append(padded_image)
+            pixel_masks.append(pixel_mask.to(torch.bool))
 
         return {
             "pixel_values": torch.stack(padded_images),
@@ -182,6 +190,10 @@ def create_dataloaders(
     geom_scale_max: float,
 ) -> tuple[DataLoader, DataLoader]:
     collate_fn = build_collate_fn(processor)
+    loader_kwargs: dict[str, Any] = {}
+    if num_workers > 0:
+        loader_kwargs["persistent_workers"] = True
+        loader_kwargs["prefetch_factor"] = 2
 
     train_dataset = DetrCocoDataset(
         train_image_dir,
@@ -210,6 +222,7 @@ def create_dataloaders(
         num_workers=num_workers,
         pin_memory=torch.cuda.is_available(),
         collate_fn=collate_fn,
+        **loader_kwargs,
     )
     valid_loader = DataLoader(
         valid_dataset,
@@ -218,6 +231,7 @@ def create_dataloaders(
         num_workers=num_workers,
         pin_memory=torch.cuda.is_available(),
         collate_fn=collate_fn,
+        **loader_kwargs,
     )
 
     return train_loader, valid_loader

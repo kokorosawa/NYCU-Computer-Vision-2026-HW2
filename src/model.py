@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from torchvision.models import ResNet50_Weights, resnet50
 from transformers import DetrConfig, DetrForObjectDetection, DetrImageProcessor
 
 from src.dataset import build_label_mappings
@@ -25,8 +26,18 @@ def create_model(
     config.id2label = id2label
     config.label2id = label2id
 
-    return DetrForObjectDetection.from_pretrained(
-        model_name,
-        config=config,
-        ignore_mismatched_sizes=True,
+    model = DetrForObjectDetection(config)
+
+    imagenet_resnet = resnet50(weights=ResNet50_Weights.DEFAULT)
+    missing_keys, unexpected_keys = model.model.backbone.model.load_state_dict(
+        imagenet_resnet.state_dict(),
+        strict=False,
     )
+    unexpected_set = set(unexpected_keys)
+    if missing_keys or unexpected_set != {"fc.weight", "fc.bias"}:
+        raise RuntimeError(
+            "Failed to load pretrained ResNet-50 backbone cleanly. "
+            f"missing={missing_keys}, unexpected={unexpected_keys}"
+        )
+
+    return model
