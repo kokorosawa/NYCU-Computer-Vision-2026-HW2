@@ -1,0 +1,48 @@
+\section{Additional Experiments}
+\subsection{Experiment A: Homework-Compliant DETR vs Deformable DETR}
+\textbf{Hypothesis.}
+With the same rule (only pretrained ResNet-50 backbone, no pretrained transformer), Deformable DETR should converge better than DETR.
+
+\textbf{What may (or may not) work.}
+Architecture upgrade should improve feature aggregation and box refinement even without transformer pretraining.
+
+\textbf{Result.}
+Comparing successful runs R1 and R2:
+\begin{enumerate}
+    \item DETR baseline (R1): AP=0.00039, and convergence is very slow.
+    \item Deformable DETR (R2): AP=0.2993.
+\end{enumerate}
+
+\textbf{Implication.}
+Under the assignment constraint, moving from DETR to Deformable DETR is the main source of improvement in my experiments.
+
+\subsection{Experiment B: Learning Progression in a Successful Deformable Run}
+\textbf{Hypothesis.}
+Without transformer pretraining, the model should still improve steadily over epochs if the training pipeline is correct.
+
+\textbf{What may (or may not) work.}
+Early epochs may focus on coarse localization and classification, while later epochs improve precision.
+
+\textbf{Result.}
+In R2 (\texttt{kqscm42c}):
+\begin{enumerate}
+    \item Epoch 1: AP=0.0329.
+    \item Epoch 10: AP=0.2833.
+    \item Epoch 13: AP=0.2993.
+\end{enumerate}
+
+\textbf{Implication.}
+The Deformable DETR pipeline converges reliably in this successful setup.
+
+\subsection{Experiment C: Effect on AP50 and AP}
+\textbf{Hypothesis.}
+If localization quality improves together with classification confidence, AP50 and AP should rise together.
+
+\textbf{What may (or may not) work.}
+AP50 may improve faster than AP when coarse localization is learned earlier than precise localization.
+
+\textbf{Result.}
+In R2, AP50/AP progressed from 0.0888/0.0329 (epoch 1) to 0.5785/0.2993 (epoch 13).
+
+\textbf{Implication.}
+Both metrics improved substantially, indicating better detection quality rather than only threshold-sensitive gains.

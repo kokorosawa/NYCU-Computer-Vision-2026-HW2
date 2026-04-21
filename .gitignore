@@ -7,3 +7,19 @@ wandb/
 nycu-hw2-data.tar.gz
 .codex
 *.safetensors
+template/fonts
+*.aux
+
+# LaTeX build artifacts
+*.bbl
+*.bcf
+*.blg
+*.fdb_latexmk
+*.fls
+*.log
+*.out
+*.run.xml
+*.synctex.gz
+*.toc
+*.xdv
+*.pdf

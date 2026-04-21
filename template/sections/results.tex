@@ -1,0 +1,48 @@
+\section{Results and Findings}
+\subsection{Representative Quantitative Results}
+Table \ref{tab:main_results} only includes runs that follow the homework constraint:
+pretrained ResNet-50 backbone is allowed, while transformer weights are not loaded from pretrained checkpoints.
+The compliant DETR run is \texttt{devout-cosmos-42 / xrob5wme}.
+Only successful runs with complete usable results are reported below.
+
+\begin{table}[H]
+    \centering
+    \scriptsize
+    \caption{Homework-compliant experiments and validation performance.}
+    \label{tab:main_results}
+    \begin{tabular}{p{1.0cm}p{5.5cm}p{1.1cm}p{1.2cm}p{1.6cm}p{4.0cm}}
+        \toprule
+        ID & Setup & Epochs & AP50 & AP & Notes \\
+        \midrule
+        R1 & DETR, batch=12, warmup-cosine, no augmentation, resumed training & 21 & 0.0014 & 0.00039 & \texttt{xrob5wme} (\texttt{devout-cosmos-42}); very slow convergence \\
+        R2 & Deformable DETR, batch=2, no augmentation & 13 & \textbf{0.5785} & \textbf{0.2993} & \texttt{kqscm42c}; checkpoint-backed result \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\subsection{Training Dynamics Example}
+Table \ref{tab:deformable_curve} shows the epoch trend for a stable Deformable DETR run (\texttt{kqscm42c}).
+The model improved steadily within 13 epochs.
+
+\begin{table}[H]
+    \centering
+    \caption{Epoch trend for Deformable DETR (batch=2, no augmentation).}
+    \label{tab:deformable_curve}
+    \begin{tabular}{ccccc}
+        \toprule
+        Epoch & Train loss & Valid loss & mAP@0.5 & mAP@0.5:0.95 \\
+        \midrule
+        1 & 2.0667 & 1.4427 & 0.0888 & 0.0329 \\
+        5 & 1.1110 & 1.1635 & 0.3098 & 0.1588 \\
+        10 & 1.0307 & 1.0314 & 0.5500 & 0.2833 \\
+        13 & 1.0035 & 1.0145 & 0.5785 & 0.2993 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\subsection{Key Findings}
+\begin{enumerate}
+    \item \textbf{The compliant DETR run (\texttt{xrob5wme}) converged very slowly:} after 21 epochs, AP remained at 0.00039.
+    \item \textbf{Successful Deformable DETR training improved substantially over the compliant DETR baseline:} AP=0.2993 and AP50=0.5785 in run \texttt{kqscm42c}.
+    \item \textbf{Within the successful run, learning is stable:} AP rises from 0.0329 (epoch 1) to 0.2993 (epoch 13).
+\end{enumerate}

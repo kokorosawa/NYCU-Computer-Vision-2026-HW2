@@ -1,0 +1,13 @@
+\section{Conclusion}
+This project established a complete object-detection pipeline with reproducible training, evaluation, and inference.
+All reported settings follow the homework rule: pretrained ResNet-50 backbone is used, but pretrained transformer weights are not used.
+
+Using the specified compliant DETR run (\texttt{devout-cosmos-42 / xrob5wme}) as baseline, convergence is very slow and AP remains low (0.00039).
+After migrating to Deformable DETR under the same constraint, AP improves substantially to 0.2993 (checkpoint-backed in \texttt{kqscm42c}).
+The successful Deformable run also shows stable epoch-wise improvement.
+
+Future work will focus on longer successful Deformable DETR training and stronger augmentation/scheduler ablations under the same homework-compliant setting.
+
+\section{Code Availability}
+GitHub repository link (please replace with your final public URL before submission):
+\url{https://github.com/your-account/your-repo}

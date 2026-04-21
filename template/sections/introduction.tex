@@ -1,0 +1,11 @@
+\section{Introduction}
+This homework focuses on object detection on a COCO-style dataset (\texttt{train.json}/\texttt{valid.json}) with 10 categories.
+The goal is to build a reproducible training and inference pipeline from scratch, then improve both stability and final detection performance through systematic experiments.
+
+My core idea is to iterate in two phases:
+\begin{enumerate}
+    \item Build a homework-compliant DETR baseline where only the ResNet-50 backbone uses pretrained weights.
+    \item Migrate to Deformable DETR under the same constraint (no pretrained transformer weights) and improve training stability.
+\end{enumerate}
+
+The report documents implementation details, quantitative findings, and additional successful experiments.

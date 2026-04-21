@@ -156,6 +156,7 @@ def run_validation(
     device: torch.device,
     threshold: float = 0.0,
     metric_backend: str = "pycocotools",
+    amp_autocast_dtype: torch.dtype | None = None,
     epoch: int | None = None,
     total_epochs: int | None = None,
 ) -> tuple[float, dict[str, float]]:
@@ -172,8 +173,10 @@ def run_validation(
             pixel_values = batch["pixel_values"].to(device)
             pixel_mask = batch["pixel_mask"].to(device)
             labels = move_labels_to_device(batch["labels"], device)
+            amp_enabled = amp_autocast_dtype is not None and device.type == "cuda"
 
-            outputs = model(pixel_values=pixel_values, pixel_mask=pixel_mask, labels=labels)
+            with torch.autocast(device_type="cuda", dtype=amp_autocast_dtype, enabled=amp_enabled):
+                outputs = model(pixel_values=pixel_values, pixel_mask=pixel_mask, labels=labels)
             total_loss += outputs.loss.item()
             progress.set_postfix(loss=f"{outputs.loss.item():.4f}", avg=f"{total_loss / step:.4f}")
 

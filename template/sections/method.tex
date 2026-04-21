@@ -1,0 +1,35 @@
+\section{Method}
+\subsection{Data Preprocessing}
+I use COCO-format annotations and a custom dataset wrapper (\texttt{src/dataset.py}) based on COCO detection loading in torchvision.
+The key preprocessing steps are:
+\begin{enumerate}
+    \item Build explicit category-id mappings (\texttt{raw\_to\_contiguous}, \texttt{contiguous\_to\_raw}) to avoid label-index mismatch.
+    \item Use Hugging Face DETR-style image processors for tensor conversion and target formatting.
+    \item Dynamically pad images in the collate function and generate pixel masks for transformer attention.
+\end{enumerate}
+
+\subsection{Model Architecture}
+I experimented with two transformer-based detectors:
+\begin{enumerate}
+    \item DETR (\texttt{facebook/detr-resnet-50}) as the main baseline \cite{carion2020end}.
+    \item Deformable DETR (\texttt{SenseTime/deformable-detr}) as an architectural upgrade \cite{zhu2021deformabledetr}.
+\end{enumerate}
+To satisfy the homework rule, I did \textbf{not} finetune pretrained DETR/Deformable-DETR transformer weights.
+Instead, both models are instantiated from config, the detector head is adapted to 10 classes, and only the ResNet-50 backbone is initialized from ImageNet-pretrained weights.
+
+\subsection{Training Setup}
+Training is implemented in \texttt{src/train.py} with:
+\begin{enumerate}
+    \item Optimizer: AdamW with two learning rates (detector parameters and backbone parameters) \cite{loshchilov2019decoupled}.
+    \item Scheduler: cosine or warmup+cosine schedule.
+    \item Gradient clipping (\texttt{max\_grad\_norm=0.1}).
+    \item Mixed precision options (\texttt{bf16/fp16}) and optional \texttt{torch.compile}.
+    \item Resume support from checkpoints (\texttt{last.pt}, \texttt{best\_loss.pt}, \texttt{best\_map.pt}).
+\end{enumerate}
+
+\subsection{Data Augmentation}
+I implemented two augmentation modules:
+\begin{enumerate}
+    \item Color jitter (brightness/contrast/saturation/hue perturbations).
+    \item Geometric random affine transform with synchronized bounding-box transformation and filtering of invalid boxes.
+\end{enumerate}

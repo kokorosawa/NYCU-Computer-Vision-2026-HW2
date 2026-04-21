@@ -26,11 +26,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--warmup-start-factor", type=float, default=0.1)
     parser.add_argument("--batch-size", type=int, default=4)
     parser.add_argument("--metric-backend", type=str, default="pycocotools", choices=["pycocotools", "custom"])
+    parser.add_argument("--amp", type=str, default="bf16" if torch.cuda.is_available() else "none", choices=["none", "bf16", "fp16"])
+    parser.add_argument("--compile", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument("--lr-backbone", type=float, default=1e-5)
     parser.add_argument("--weight-decay", type=float, default=1e-4)
     parser.add_argument("--max-grad-norm", type=float, default=0.1)
-    parser.add_argument("--num-workers", type=int, default=4)
+    parser.add_argument("--num-workers", type=int, default=8)
     parser.add_argument("--augment", action="store_true", help="Enable basic color jitter augmentation for training.")
     parser.add_argument("--aug-color", action="store_true", help="Enable color jitter augmentation.")
     parser.add_argument("--aug-geom", action="store_true", help="Enable geometric affine augmentation.")
@@ -65,6 +67,8 @@ def init_wandb(args: argparse.Namespace, paths: dict[str, Path], output_dir: Pat
         "warmup_start_factor": args.warmup_start_factor,
         "batch_size": args.batch_size,
         "metric_backend": args.metric_backend,
+        "amp": args.amp,
+        "compile": args.compile,
         "lr": args.lr,
         "lr_backbone": args.lr_backbone,
         "weight_decay": args.weight_decay,
@@ -106,6 +110,8 @@ def run_epoch(
     device: torch.device,
     optimizer: torch.optim.Optimizer | None = None,
     max_grad_norm: float | None = None,
+    amp_autocast_dtype: torch.dtype | None = None,
+    scaler: torch.cuda.amp.GradScaler | None = None,
     epoch: int | None = None,
     total_epochs: int | None = None,
 ) -> float:
@@ -121,20 +127,30 @@ def run_epoch(
         pixel_values = batch["pixel_values"].to(device)
         pixel_mask = batch["pixel_mask"].to(device)
         labels = move_labels_to_device(batch["labels"], device)
+        amp_enabled = amp_autocast_dtype is not None and device.type == "cuda"
 
         with torch.set_grad_enabled(is_training):
-            outputs = model(pixel_values=pixel_values, pixel_mask=pixel_mask, labels=labels)
-            loss = outputs.loss
+            with torch.autocast(device_type="cuda", dtype=amp_autocast_dtype, enabled=amp_enabled):
+                outputs = model(pixel_values=pixel_values, pixel_mask=pixel_mask, labels=labels)
+                loss = outputs.loss
 
             if not torch.isfinite(loss):
                 raise RuntimeError(f"non-finite loss detected at step {step}: {loss.item()}")
 
             if is_training:
                 optimizer.zero_grad(set_to_none=True)
-                loss.backward()
-                if max_grad_norm is not None:
-                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)
-                optimizer.step()
+                if scaler is not None and scaler.is_enabled():
+                    scaler.scale(loss).backward()
+                    if max_grad_norm is not None:
+                        scaler.unscale_(optimizer)
+                        torch.nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)
+                    scaler.step(optimizer)
+                    scaler.update()
+                else:
+                    loss.backward()
+                    if max_grad_norm is not None:
+                        torch.nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)
+                    optimizer.step()
 
         total_loss += loss.item()
         progress.set_postfix(loss=f"{loss.item():.4f}", avg=f"{total_loss / step:.4f}")
@@ -197,6 +213,15 @@ def train(args: argparse.Namespace) -> None:
 
     device = torch.device(args.device)
     model.to(device)
+    amp_autocast_dtype: torch.dtype | None = None
+    if args.amp != "none":
+        if device.type != "cuda":
+            print(f"AMP requested ({args.amp}) but device={device.type}; AMP disabled.")
+        elif args.amp == "bf16":
+            amp_autocast_dtype = torch.bfloat16
+        else:
+            amp_autocast_dtype = torch.float16
+
     backbone_parameters = []
     other_parameters = []
     for name, parameter in model.named_parameters():
@@ -263,22 +288,37 @@ def train(args: argparse.Namespace) -> None:
             f"Resumed from {args.resume} " f"(start_epoch={start_epoch}, best_valid_loss={best_valid_loss:.4f}, best_map_50_95={best_map_50_95:.4f})"
         )
 
+    train_model = model
+    if args.compile:
+        if hasattr(torch, "compile"):
+            train_model = torch.compile(model)
+            print("Enabled torch.compile")
+        else:
+            print("torch.compile is not available in this environment; continue without compile.")
+
+    scaler = torch.cuda.amp.GradScaler(enabled=amp_autocast_dtype == torch.float16)
+    if amp_autocast_dtype is not None:
+        print(f"Enabled AMP autocast ({args.amp})")
+
     for epoch in range(start_epoch, args.epochs + 1):
         train_loss = run_epoch(
-            model,
+            train_model,
             train_loader,
             device,
             optimizer=optimizer,
             max_grad_norm=args.max_grad_norm,
+            amp_autocast_dtype=amp_autocast_dtype,
+            scaler=scaler,
             epoch=epoch,
             total_epochs=args.epochs,
         )
         valid_loss, valid_metrics = run_validation(
-            model,
+            train_model,
             valid_loader,
             processor,
             device,
             metric_backend=args.metric_backend,
+            amp_autocast_dtype=amp_autocast_dtype,
             epoch=epoch,
             total_epochs=args.epochs,
         )
