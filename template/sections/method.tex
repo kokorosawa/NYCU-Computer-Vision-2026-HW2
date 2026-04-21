@@ -14,8 +14,9 @@ I experimented with two transformer-based detectors:
     \item DETR (\texttt{facebook/detr-resnet-50}) as the main baseline \cite{carion2020end}.
     \item Deformable DETR (\texttt{SenseTime/deformable-detr}) as an architectural upgrade \cite{zhu2021deformabledetr}.
 \end{enumerate}
-To satisfy the homework rule, I did \textbf{not} finetune pretrained DETR/Deformable-DETR transformer weights.
-Instead, both models are instantiated from config, the detector head is adapted to 10 classes, and only the ResNet-50 backbone is initialized from ImageNet-pretrained weights.
+At the beginning, I misunderstood the homework statement and thought pretrained transformer weights were allowed.
+This produced an early DETR run (\texttt{xrob5wme}) under that incorrect interpretation.
+After clarifying the rule, I switched to the required setup: models are instantiated from config, the detector head is adapted to 10 classes, and only the ResNet-50 backbone is initialized from ImageNet-pretrained weights.
 
 \subsection{Training Setup}
 Training is implemented in \texttt{src/train.py} with:

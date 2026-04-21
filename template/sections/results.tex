@@ -1,21 +1,19 @@
 \section{Results and Findings}
 \subsection{Representative Quantitative Results}
-Table \ref{tab:main_results} only includes runs that follow the homework constraint:
-pretrained ResNet-50 backbone is allowed, while transformer weights are not loaded from pretrained checkpoints.
-The compliant DETR run is \texttt{devout-cosmos-42 / xrob5wme}.
-Only successful runs with complete usable results are reported below.
+Table \ref{tab:main_results} includes successful reference runs from two stages:
+an early DETR baseline before I fully understood the homework rule, and a corrected run after applying the required setup.
 
 \begin{table}[H]
     \centering
     \scriptsize
-    \caption{Homework-compliant experiments and validation performance.}
+    \caption{Successful reference runs before and after correcting homework interpretation.}
     \label{tab:main_results}
     \begin{tabular}{p{1.0cm}p{5.5cm}p{1.1cm}p{1.2cm}p{1.6cm}p{4.0cm}}
         \toprule
         ID & Setup & Epochs & AP50 & AP & Notes \\
         \midrule
-        R1 & DETR, batch=12, warmup-cosine, no augmentation, resumed training & 21 & 0.0014 & 0.00039 & \texttt{xrob5wme} (\texttt{devout-cosmos-42}); very slow convergence \\
-        R2 & Deformable DETR, batch=2, no augmentation & 13 & \textbf{0.5785} & \textbf{0.2993} & \texttt{kqscm42c}; checkpoint-backed result \\
+        R1 & DETR, batch=12, warmup-cosine, no augmentation, resumed training & 21 & 0.00013 & 0.00003 & \texttt{xrob5wme} (\texttt{devout-cosmos-42}); latest epoch metrics, best AP=0.00039 at epoch 10 \\
+        R2 & Deformable DETR, batch=2, no augmentation & 13 & \textbf{0.5785} & \textbf{0.2993} & \texttt{kqscm42c}; run after correcting interpretation \\
         \bottomrule
     \end{tabular}
 \end{table}
@@ -42,7 +40,7 @@ The model improved steadily within 13 epochs.
 
 \subsection{Key Findings}
 \begin{enumerate}
-    \item \textbf{The compliant DETR run (\texttt{xrob5wme}) converged very slowly:} after 21 epochs, AP remained at 0.00039.
-    \item \textbf{Successful Deformable DETR training improved substantially over the compliant DETR baseline:} AP=0.2993 and AP50=0.5785 in run \texttt{kqscm42c}.
+    \item \textbf{The early DETR run (\texttt{xrob5wme}) converged very slowly:} at the latest epoch (21), AP is only 0.00003 (best AP=0.00039 at epoch 10).
+    \item \textbf{After correcting the homework interpretation, Deformable DETR achieved much stronger results:} AP=0.2993 and AP50=0.5785 in run \texttt{kqscm42c}.
     \item \textbf{Within the successful run, learning is stable:} AP rises from 0.0329 (epoch 1) to 0.2993 (epoch 13).
 \end{enumerate}
